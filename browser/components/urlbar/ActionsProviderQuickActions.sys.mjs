@@ -12,10 +12,13 @@ ChromeUtils.defineESModuleGetters(lazy, {
   QuickActionsLoaderDefault:
     "moz-src:///browser/components/urlbar/QuickActionsLoaderDefault.sys.mjs",
   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  clearTimeout: "resource://gre/modules/Timer.sys.mjs",
+  setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
 
 // These prefs are relative to the `browser.urlbar` branch.
 const ENABLED_PREF = "suggest.quickactions";
+const SHOWN_THRESHOLD_MS = 60;
 const MATCH_IN_PHRASE_PREF = "quickactions.matchInPhrase";
 const MIN_SEARCH_PREF = "quickactions.minimumSearchString";
 
@@ -55,6 +58,8 @@ class ProviderQuickActions extends ActionsProvider {
   }
 
   async queryActions(queryContext) {
+    this.#clearPendingShownTimers();
+
     let input = queryContext.trimmedLowerCaseSearchString;
     let results = await this.getActions({ input });
 
@@ -78,7 +83,14 @@ class ProviderQuickActions extends ActionsProvider {
       return null;
     }
 
+    let inputLength = Math.min(queryContext.trimmedSearchString.length, 10);
     return [...results].map(key => {
+      let timerId = lazy.setTimeout(() => {
+        this.#pendingShownTimers.delete(key);
+        Glean.urlbarQuickaction.shown[`${key}-${inputLength}`].add(1);
+      }, SHOWN_THRESHOLD_MS);
+      this.#pendingShownTimers.set(key, timerId);
+
       let action = this.#actions.get(key);
       return new ActionsResult({
         key,
@@ -90,6 +102,10 @@ class ProviderQuickActions extends ActionsProvider {
         },
       });
     });
+  }
+
+  onSearchSessionEnd() {
+    this.#clearPendingShownTimers();
   }
 
   async getActions({ input, includesExactMatch = false }) {
@@ -169,6 +185,20 @@ class ProviderQuickActions extends ActionsProvider {
       }
       this.#prefixes.set(prefix, result);
     });
+  }
+
+  /**
+   * Pending timers for the shown metric, keyed by action key.
+   *
+   * @type {Map<string, number>}
+   */
+  #pendingShownTimers = new Map();
+
+  #clearPendingShownTimers() {
+    for (let timerId of this.#pendingShownTimers.values()) {
+      lazy.clearTimeout(timerId);
+    }
+    this.#pendingShownTimers.clear();
   }
 
   /**

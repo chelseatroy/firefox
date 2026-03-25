@@ -393,6 +393,91 @@ let showAction = async testFun => {
   });
 };
 
+add_task(async function test_telemetry() {
+  await Services.fog.testFlushAllChildren();
+  Services.fog.testResetFOG();
+
+  await showAction(
+    () => new Promise(resolve => setTimeout(resolve, 100))
+  );
+
+  await Services.fog.testFlushAllChildren();
+  Assert.equal(
+    Glean.urlbarQuickaction.shown["testaction-7"].testGetValue(),
+    1,
+    "shown metric incremented once"
+  );
+  Assert.equal(
+    Glean.urlbarQuickaction.picked["testaction-7"].testGetValue(),
+    null,
+    "picked metric not incremented without a pick"
+  );
+});
+
+add_task(async function test_telemetry_timer_resets_on_keystroke() {
+  await Services.fog.testFlushAllChildren();
+  Services.fog.testResetFOG();
+
+  // Show the action at inputLength 6, then immediately at inputLength 7.
+  // The first timer is cancelled when the second query starts, so only the
+  // second label should be recorded.
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "testac",
+  });
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "testact",
+  });
+
+  await new Promise(resolve => setTimeout(resolve, 100));
+
+  await UrlbarTestUtils.promisePopupClose(window, () => {
+    EventUtils.synthesizeKey("KEY_Escape");
+    EventUtils.synthesizeKey("KEY_Escape");
+    EventUtils.synthesizeKey("KEY_Escape");
+  });
+
+  await Services.fog.testFlushAllChildren();
+  Assert.equal(
+    Glean.urlbarQuickaction.shown["testaction-6"].testGetValue(),
+    null,
+    "shown metric not recorded for the superseded query"
+  );
+  Assert.equal(
+    Glean.urlbarQuickaction.shown["testaction-7"].testGetValue(),
+    1,
+    "shown metric recorded for the final query after threshold"
+  );
+});
+
+add_task(async function test_telemetry_timer_cancelled_on_session_end() {
+  await Services.fog.testFlushAllChildren();
+  Services.fog.testResetFOG();
+
+  // Open the popup and close it immediately. The timer is cancelled by
+  // onSearchSessionEnd before the 60ms threshold elapses.
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "testact",
+  });
+  await UrlbarTestUtils.promisePopupClose(window, () => {
+    EventUtils.synthesizeKey("KEY_Escape");
+    EventUtils.synthesizeKey("KEY_Escape");
+    EventUtils.synthesizeKey("KEY_Escape");
+  });
+
+  // Wait past the threshold to confirm no delayed fire occurred.
+  await new Promise(resolve => setTimeout(resolve, 100));
+
+  await Services.fog.testFlushAllChildren();
+  Assert.equal(
+    Glean.urlbarQuickaction.shown["testaction-7"].testGetValue(),
+    null,
+    "shown metric not recorded when session ended before threshold"
+  );
+});
+
 add_task(async function test_label_shown() {
   await SpecialPowers.pushPrefEnv({
     set: [
