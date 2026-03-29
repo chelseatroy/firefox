@@ -1484,6 +1484,20 @@ urlbar.zeroprefix:
     telemetry_mirror: URLBAR_ZEROPREFIX_EXPOSURE
 
 urlbar.quickaction:
+  shown:
+    type: labeled_counter
+    description: >
+      Counts how many times quickaction results were shown in the urlbar
+      dropdown. The key is in the form "actionkey-N" where N is the number
+      of characters the user typed when the action appeared, capped at 10.
+    bugs:
+      - https://bugzil.la/2022397
+    data_reviews:
+      - https://bugzil.la/2022397
+    notification_emails:
+      - fx-search-telemetry@mozilla.com
+    expires: never
+
   picked:
     type: labeled_counter
     description: >

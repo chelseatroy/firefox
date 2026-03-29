@@ -1442,6 +1442,7 @@ interface GleanImpl {
   }
 
   urlbarQuickaction: {
+    shown: Record<string, GleanCounter>;
     picked: Record<string, GleanCounter>;
   }
 
